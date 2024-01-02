@@ -69,7 +69,7 @@ function environments(below::FiniteMPS{S}, O::Union{SparseMPO,MPOHamiltonian},
     return environments(below, O, above, leftstart, rightstart)
 end
 
-function MPSKit.environments(below::FiniteMPS{S}, O::DenseMPO, above=nothing) where {S}
+function environments(below::FiniteMPS{S}, O::DenseMPO, above=nothing) where {S}
     N = length(below)
     leftstart = isomorphism(storagetype(S),
                             left_virtualspace(below, 0) ⊗ space(O[1], 1)' ←
@@ -81,11 +81,20 @@ function MPSKit.environments(below::FiniteMPS{S}, O::DenseMPO, above=nothing) wh
 end
 
 #extract the correct leftstart/rightstart for WindowMPS
-function environments(state::WindowMPS, O::Union{SparseMPO,MPOHamiltonian,DenseMPO},
+function environments(state::WindowMPS, O::Union{SparseMPO,MPOHamiltonian,DenseMPO,TimedOperator},
                       above=nothing; lenvs=environments(state.left_gs, O),
                       renvs=environments(state.right_gs, O))
     return environments(state, O, above, copy(leftenv(lenvs, 1, state.left_gs)),
                         copy(rightenv(renvs, length(state), state.right_gs)))
+end
+
+
+environments(below,opp::TimedOperator,above,leftstart,rightstart) = environments(below,opp.op,above,leftstart,rightstart)
+
+function environments(Ψ::WindowMPS,windowH::Window)
+    lenvs = environments(Ψ.left_gs,windowH.left)
+    renvs = environments(Ψ.right_gs,windowH.right)
+    Window(lenvs, environments(Ψ,windowH.middle;lenvs=lenvs,renvs=renvs), renvs)
 end
 
 function environments(below::S, above::S) where {S<:Union{FiniteMPS,WindowMPS}}

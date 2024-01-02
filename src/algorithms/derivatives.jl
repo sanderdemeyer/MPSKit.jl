@@ -279,6 +279,8 @@ function ∂∂AC2(pos::Int, state, opp::ProjectionOperator, env)
                        rightenv(env, pos + 1, state))
 end
 
+
+
 (x::LazySum{<:MPSKit.DerivativeOperator})(y) = sum(O -> O(y), x)
 Base.:*(h::LazySum{<:MPSKit.DerivativeOperator}, v) = h(v)
 
@@ -296,3 +298,22 @@ function ∂∂AC2(pos::Int, mps, opp::LazySum, cache::MultipleEnvironments)
     return LazySum{MPO_∂∂AC2}(map((op, openv) -> ∂∂AC2(pos, mps, op, openv), opp.ops,
                                   cache.envs))
 end
+
+# MultipliedOperator and SumOfOperators
+∂∂C(pos::Int,mps,opp::MultipliedOperator,cache) =
+MultipliedOperator(∂∂C(pos::Int,mps,opp.op,cache),opp.f)
+
+∂∂AC(pos::Int,mps,opp::MultipliedOperator,cache) =
+MultipliedOperator(∂∂AC(pos::Int,mps,opp.op,cache),opp.f)
+
+∂∂AC2(pos::Int,mps,opp::MultipliedOperator,cache) =
+MultipliedOperator(∂∂AC2(pos::Int,mps,opp.op,cache),opp.f)
+
+∂∂C(pos::Int,mps,opp::SumOfOperators,cache::MultipleEnvironments) =
+    SumOfOperators( map((op,openv)->∂∂C(pos,mps,op,openv),opp.ops,cache.envs) )
+
+∂∂AC(pos::Int,mps,opp::SumOfOperators,cache::MultipleEnvironments) =
+    SumOfOperators( map((op,openv)->∂∂AC(pos,mps,op,openv),opp.ops,cache.envs) )
+
+∂∂AC2(pos::Int,mps,opp::SumOfOperators,cache::MultipleEnvironments) =
+    SumOfOperators( map((op,openv)->∂∂AC2(pos,mps,op,openv),opp.ops,cache.envs) )

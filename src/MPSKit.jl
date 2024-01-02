@@ -27,7 +27,7 @@ export entanglementplot, transferplot
 
 # hamiltonian things
 export Cache
-export SparseMPO, MPOHamiltonian, DenseMPO, MPOMultiline, LazySum
+export SparseMPO, MPOHamiltonian, DenseMPO, MPOMultiline, LazySum, UntimedOperator, TimedOperator, SumOfOperators
 export ∂C, ∂AC, ∂AC2, environments, expectation_value, effective_excitation_hamiltonian
 export leftenv, rightenv
 
@@ -37,6 +37,8 @@ export VUMPS, DMRG, DMRG2, IDMRG1, IDMRG2, GradientGrassmann
 export excitations, FiniteExcited, QuasiparticleAnsatz
 export marek_gap, correlation_length, correlator
 export timestep!, timestep, TDVP, TDVP2, make_time_mpo, WI, WII, TaylorCluster
+export _update_leftEnv!, _update_rightEnv!, leftexpand, rightexpand
+export ImplicitMidpoint, RK4, Taylor
 export splitham, infinite_temperature, entanglement_spectrum, transfer_spectrum, variance
 export changebonds!, changebonds, VUMPSSvdCut, OptimalExpand, SvdCut, UnionTrunc, RandExpand
 export entropy
@@ -80,6 +82,8 @@ include("operators/mpohamiltonian.jl") # the mpohamiltonian objects
 include("operators/mpomultiline.jl")
 include("operators/projection.jl")
 include("operators/lazysum.jl")
+include("operators/multipliedoperator.jl")
+include("operators/sumofoperators.jl")
 
 include("transfermatrix/transfermatrix.jl")
 include("transfermatrix/transfer.jl")
@@ -110,7 +114,9 @@ include("algorithms/changebonds/svdcut.jl")
 include("algorithms/changebonds/randexpand.jl")
 
 include("algorithms/timestep/tdvp.jl")
+include("algorithms/timestep/windowtdvp.jl")
 include("algorithms/timestep/timeevmpo.jl")
+include("algorithms/timestep/integrators.jl")
 
 include("algorithms/groundstate/vumps.jl")
 include("algorithms/groundstate/idmrg.jl")

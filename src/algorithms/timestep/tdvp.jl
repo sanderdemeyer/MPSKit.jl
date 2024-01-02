@@ -1,11 +1,11 @@
 """
-    timestep(ψ, H, dt, algorithm, environments)
-    timestep!(ψ, H, dt, algorithm, environments)
+    timestep(Ψ, H, t, dt, algorithm, environments)
+    timestep(Ψ, H, dt, algorithm, environments)
 
-Compute the time-evolved state ``ψ′ ≈ exp(-iHdt) ψ``.
+Compute the time-evolved state ``Ψ′ ≈ exp(-iHdt) Ψ`` where H can be time-dependent. For a time-independent H (i.e. not a TimedOperator) t is ignored.
 
 # Arguments
-- `ψ::AbstractMPS`: current state
+- `Ψ::AbstractMPS`: current state
 - `H::AbstractMPO`: evolution operator
 - `dt::Number`: timestep
 - `algorithm`: evolution algorithm
@@ -20,72 +20,100 @@ Single site [TDVP](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.107
 algorithm for time evolution.
 
 # Fields
-- `expalg::A`: exponentiator algorithm
+- `integrator::A`: integration algorithm (defaults to Lanczos exponentiation)
 - `tolgauge::Float64`: tolerance for gauging algorithm
 - `maxiter::Int`: maximum amount of gauging iterations
 """
 @kwdef struct TDVP{A} <: Algorithm
-    expalg::A = Lanczos(; tol=Defaults.tol)
+    integrator::A = Lanczos(; tol=Defaults.tol)
     tolgauge::Float64 = Defaults.tolgauge
     maxiter::Int = Defaults.maxiter
 end
 
-function timestep(ψ::InfiniteMPS, H, dt::Number, alg::TDVP, envs::Cache=environments(ψ, H))
-    temp_ACs = similar(ψ.AC)
-    temp_CRs = similar(ψ.CR)
+function timestep(Ψ::InfiniteMPS, H, time::Number, timestep::Number, alg::TDVP, 
+    envs::Union{Cache,MultipleEnvironments}=environments(Ψ,H); leftorthflag=true)
 
-    @sync for (loc, (ac, c)) in enumerate(zip(ψ.AC, ψ.CR))
-        Threads.@spawn begin
-            h = ∂∂AC($loc, $ψ, $H, $envs)
-            $temp_ACs[loc], convhist = exponentiate(h, -1im * $dt, $ac, alg.expalg)
-            convhist.converged == 0 &&
+    temp_ACs = similar(Ψ.AC);
+    temp_CRs = similar(Ψ.CR);
+
+    @sync for (loc,(ac,c)) in enumerate(zip(Ψ.AC,Ψ.CR))
+        @Threads.spawn begin
+            h_ac = MPSKit.∂∂AC($loc,$Ψ,$H,$envs);
+            $temp_ACs[loc], converged, convhist = integrate(h_ac,$ac,$time,-1im,$timestep,alg.integrator)
+            converged == 0 &&
                 @info "time evolving ac($loc) failed $(convhist.normres)"
         end
 
-        Threads.@spawn begin
-            h = ∂∂C($loc, $ψ, $H, $envs)
-            $temp_CRs[loc], convhist = exponentiate(h, -1im * $dt, $c, alg.expalg)
-            convhist.converged == 0 &&
-                @info "time evolving a($loc) failed $(convhist.normres)"
+        @Threads.spawn begin
+            h_c = MPSKit.∂∂C($loc,$Ψ,$H,$envs);
+            $temp_CRs[loc], converged, convhist = integrate(h_c,$c,$time,-1im,$timestep,alg.integrator)
+            converged == 0 &&
+                @info "time evolving ac($loc) failed $(convhist.normres)"
         end
     end
 
-    for loc in 1:length(ψ)
+    if leftorthflag
 
-        #find Al that best fits these new Acenter and centers
-        QAc, _ = leftorth!(temp_ACs[loc]; alg=TensorKit.QRpos())
-        Qc, _ = leftorth!(temp_CRs[loc]; alg=TensorKit.QRpos())
-        @plansor temp_ACs[loc][-1 -2; -3] = QAc[-1 -2; 1] * conj(Qc[-3; 1])
+        for loc in 1:length(Ψ)
+            #find AL that best fits these new Acenter and centers
+            QAc,_ = leftorth!(temp_ACs[loc],alg=TensorKit.QRpos())
+            Qc,_ = leftorth!(temp_CRs[loc],alg=TensorKit.QRpos())
+            @plansor temp_ACs[loc][-1 -2;-3] = QAc[-1 -2;1]*conj(Qc[-3;1])
+        end
+        newΨ = InfiniteMPS(temp_ACs,Ψ.CR[end]; tol = alg.tolgauge, maxiter = alg.maxiter)
+    
+    else
+
+        for loc in 1:length(Ψ)
+            #find AR that best fits these new Acenter and centers
+            _,QAc = rightorth!(_transpose_tail(temp_ACs[loc]),alg=TensorKit.LQpos())
+            _,Qc = rightorth!(temp_CRs[mod1(loc-1,end)],alg=TensorKit.LQpos())
+            temp_ACs[loc] = _transpose_front(Qc'*QAc)
+        end
+        newΨ = InfiniteMPS(Ψ.CR[0],temp_ACs; tol = alg.tolgauge, maxiter = alg.maxiter)
     end
-
-    nstate = InfiniteMPS(temp_ACs, ψ.CR[end]; tol=alg.tolgauge, maxiter=alg.maxiter)
-    recalculate!(envs, nstate)
-    return nstate, envs
+    
+    recalculate!(envs,newΨ)
+    newΨ,envs
 end
 
-function timestep!(ψ::AbstractFiniteMPS, H, dt::Number, alg::TDVP, envs=environments(ψ, H))
-    for i in 1:(length(ψ) - 1)
-        h_ac = ∂∂AC(i, ψ, H, envs)
-        ψ.AC[i], convhist = exponentiate(h_ac, -1im * dt / 2, ψ.AC[i], alg.expalg)
+function timestep!(Ψ::AbstractFiniteMPS, H, t::Number, dt::Number, alg::TDVP, 
+    envs::Union{Cache,MultipleEnvironments}=environments(Ψ, H))
 
-        h_c = ∂∂C(i, ψ, H, envs)
-        ψ.CR[i], convhist = exponentiate(h_c, 1im * dt / 2, ψ.CR[i], alg.expalg)
+    for i in 1:(length(Ψ) - 1)
+        h_ac = ∂∂AC(i, Ψ, H, envs)
+        Ψ.AC[i], converged, convhist = integrate(h_ac, Ψ.AC[i], t, -1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving ac($i) on the left->right sweep failed $(convhist.normres)"
+
+        h_c = ∂∂C(i, Ψ, H, envs)
+        Ψ.CR[i], converged, convhist = integrate(h_c, Ψ.CR[i], t, 1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving c($i) on the left->right sweep failed $(convhist.normres)"
     end
 
-    h_ac = ∂∂AC(length(ψ), ψ, H, envs)
-    ψ.AC[end], convhist = exponentiate(h_ac, -1im * dt / 2, ψ.AC[end], alg.expalg)
+    h_ac = ∂∂AC(length(Ψ), Ψ, H, envs)
+    Ψ.AC[end], converged, convhist = integrate(h_ac, Ψ.AC[end], t, -1im, dt / 2, alg.integrator)
+    converged == 0 &&
+                @info "time evolving ac($(length(Ψ))) on the left->right sweep failed $(convhist.normres)"
 
-    for i in length(ψ):-1:2
-        h_ac = ∂∂AC(i, ψ, H, envs)
-        ψ.AC[i], convhist = exponentiate(h_ac, -1im * dt / 2, ψ.AC[i], alg.expalg)
+    for i in length(Ψ):-1:2
+        h_ac = ∂∂AC(i, Ψ, H, envs)
+        Ψ.AC[i], converged, convhist = integrate(h_ac, Ψ.AC[i], t + dt / 2, -1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving c($i) on the right->left sweep failed $(convhist.normres)"
 
-        h_c = ∂∂C(i - 1, ψ, H, envs)
-        ψ.CR[i - 1], convhist = exponentiate(h_c, 1im * dt / 2, ψ.CR[i - 1], alg.expalg)
+        h_c = ∂∂C(i - 1, Ψ, H, envs)
+        Ψ.CR[i - 1], converged, convhist = integrate(h_c, Ψ.CR[i - 1], t + dt / 2, 1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving c($i) on the right->left sweep failed $(convhist.normres)"
     end
 
-    h_ac = ∂∂AC(1, ψ, H, envs)
-    ψ.AC[1], convhist = exponentiate(h_ac, -1im * dt / 2, ψ.AC[1], alg.expalg)
-    return ψ, envs
+    h_ac = ∂∂AC(1, Ψ, H, envs)
+    Ψ.AC[1], converged, convhist = integrate(h_ac, Ψ.AC[1], t + dt / 2, -1im, dt / 2, alg.integrator)
+    converged == 0 &&
+        @info "time evolving ac(1) on the right->left sweep failed $(convhist.normres)"
+    return Ψ, envs
 end
 
 """
@@ -95,61 +123,72 @@ end
 algorithm for time evolution.
 
 # Fields
-- `expalg::A`: exponentiator algorithm
+- `integrator::A`: integrator algorithm (defaults to Lanczos exponentiation)
 - `tolgauge::Float64`: tolerance for gauging algorithm
 - `maxiter::Int`: maximum amount of gauging iterations
 - `trscheme`: truncation algorithm for [tsvd][TensorKit.tsvd](@ref)
 """
 @kwdef struct TDVP2{A} <: Algorithm
-    expalg::A = Lanczos(; tol=Defaults.tol)
+    integrator::A = Lanczos(; tol=Defaults.tol)
     tolgauge::Float64 = Defaults.tolgauge
     maxiter::Int = Defaults.maxiter
     trscheme = truncerr(1e-3)
 end
 
-function timestep!(ψ::AbstractFiniteMPS, H, dt::Number, alg::TDVP2, envs=environments(ψ, H);
-                   rightorthed=false)
+function timestep!(Ψ::AbstractFiniteMPS, H, t::Number, dt::Number, alg::TDVP2,
+    envs=environments(Ψ, H))
     #left to right
-    for i in 1:(length(ψ) - 1)
-        ac2 = _transpose_front(ψ.AC[i]) * _transpose_tail(ψ.AR[i + 1])
+    for i in 1:(length(Ψ) - 1)
+        ac2 = _transpose_front(Ψ.AC[i]) * _transpose_tail(Ψ.AR[i + 1])
 
-        h_ac2 = ∂∂AC2(i, ψ, H, envs)
-        nac2, convhist = exponentiate(h_ac2, -1im * dt / 2, ac2, alg.expalg)
+        h_ac2 = ∂∂AC2(i, Ψ, H, envs)
+        nac2, converged, convhist = integrate(h_ac2, ac2, t, -1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving ac2($i) failed $(convhist.normres)"
 
         nal, nc, nar = tsvd(nac2; trunc=alg.trscheme, alg=TensorKit.SVD())
 
-        ψ.AC[i] = (nal, complex(nc))
-        ψ.AC[i + 1] = (complex(nc), _transpose_front(nar))
+        Ψ.AC[i] = (nal, complex(nc))
+        Ψ.AC[i + 1] = (complex(nc), _transpose_front(nar))
 
-        if i != (length(ψ) - 1)
-            ψ.AC[i + 1], convhist = exponentiate(∂∂AC(i + 1, ψ, H, envs), 1im * dt / 2,
-                                                 ψ.AC[i + 1], alg.expalg)
+        if i != (length(Ψ) - 1)
+            Ψ.AC[i + 1], converged, convhist = integrate(∂∂AC(i + 1, Ψ, H, envs), Ψ.AC[i + 1], t, 1im, dt / 2,
+                                        alg.integrator)
+            converged == 0 &&
+                @info "time evolving ac($i) failed $(convhist.normres)"
         end
     end
 
     #right to left
-    for i in length(ψ):-1:2
-        ac2 = _transpose_front(ψ.AL[i - 1]) * _transpose_tail(ψ.AC[i])
+    for i in length(Ψ):-1:2
+        ac2 = _transpose_front(Ψ.AL[i - 1]) * _transpose_tail(Ψ.AC[i])
 
-        h_ac2 = ∂∂AC2(i - 1, ψ, H, envs)
-        (nac2, convhist) = exponentiate(h_ac2, -1im * dt / 2, ac2, alg.expalg)
+        h_ac2 = ∂∂AC2(i - 1, Ψ, H, envs)
+        (nac2, converged, convhist) = integrate(h_ac2, ac2, t + dt / 2, -1im, dt / 2, alg.integrator)
+        converged == 0 &&
+                @info "time evolving ac2($i) failed $(convhist.normres)"
 
         nal, nc, nar = tsvd(nac2; trunc=alg.trscheme, alg=TensorKit.SVD())
 
-        ψ.AC[i - 1] = (nal, complex(nc))
-        ψ.AC[i] = (complex(nc), _transpose_front(nar))
+        Ψ.AC[i - 1] = (nal, complex(nc))
+        Ψ.AC[i] = (complex(nc), _transpose_front(nar))
 
         if i != 2
-            ψ.AC[i - 1], convhist = exponentiate(∂∂AC(i - 1, ψ, H, envs), 1im * dt / 2,
-                                                 ψ.AC[i - 1], alg.expalg)
+            Ψ.AC[i - 1], converged, convhist = integrate(∂∂AC(i - 1, Ψ, H, envs), Ψ.AC[i - 1], t + dt / 2, 1im, dt / 2,
+                                        alg.integrator)
+            converged == 0 &&
+                @info "time evolving ac($i) failed $(convhist.normres)"
         end
     end
 
-    return ψ, envs
+    return Ψ, envs
 end
 
+# time-independent version
+timestep(Ψ, H, dt, alg, env=environments(Ψ, H); kwargs...) = timestep(Ψ, H, 0., dt, alg, env; kwargs...) 
+
 #copying version
-function timestep(ψ::AbstractFiniteMPS, H, timestep, alg::Union{TDVP,TDVP2},
-                  envs=environments(ψ, H))
-    return timestep!(copy(ψ), H, timestep, alg, envs)
+function timestep(Ψ::AbstractFiniteMPS, H, time ,timestep, alg::Union{TDVP,TDVP2},
+    envs=environments(Ψ, H); kwargs...)
+return timestep!(copy(Ψ), H, time, timestep, alg, envs; kwargs...)
 end
