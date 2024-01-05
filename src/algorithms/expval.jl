@@ -204,3 +204,11 @@ function expectation_value(ψ::FiniteMPS, O::ProjectionOperator,
     n = norm(ψ.AC[end])^2
     return ens ./ n
 end
+
+# SumOfOperators
+# ------------------
+function expectation_value(ψ, O::SumOfOperators)
+    Prop(ops) = collect(expectation_value(ψ, ops))
+    return sum(Prop.(O.ops)) 
+end
+
