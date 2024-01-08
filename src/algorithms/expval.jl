@@ -191,6 +191,16 @@ function expectation_value(ψ, H::LinearCombination, envs::LazyLincoCache=enviro
                       zip(H.coeffs, H.opps, envs.envs))
 end
 
+# define expectation_value for MultipliedOperator as scalar multiplication of the non-multiplied result, instead of multiplying the operator itself
+expectation_value(Ψ,op::TimedOperator,t::Number,args...) = op.f(t)*expectation_value(Ψ,op.op,args...)
+expectation_value(Ψ,op::UntimedOperator,t::Number,args...) = expectation_value(Ψ,op::UntimedOperator,args...)
+expectation_value(Ψ,op::UntimedOperator,args...) = op.f*expectation_value(Ψ,op.op,args...)
+
+# define expectation_value for SumOfOperators
+expectation_value(Ψ,ops::SumOfOperators,t::Number,at::Int64) = sum(op->expectation_value(Ψ,op,t,at),ops)
+expectation_value(Ψ,ops::SumOfOperators,t::Number,envs::MultipleEnvironments=environments(Ψ,ops)) = sum(map( (op,env)->expectation_value(Ψ,op,t,env),ops.ops,envs))
+
+
 # ProjectionOperator
 # ------------------
 function expectation_value(ψ::FiniteMPS, O::ProjectionOperator,
@@ -208,7 +218,6 @@ end
 # SumOfOperators
 # ------------------
 function expectation_value(ψ, O::SumOfOperators)
-    Prop(ops) = collect(expectation_value(ψ, ops))
-    return sum(Prop.(O.ops)) 
+    return sum(x -> collect(expectation_value(ψ, x)), O.ops)
 end
 
