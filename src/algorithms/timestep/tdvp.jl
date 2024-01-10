@@ -23,11 +23,14 @@ algorithm for time evolution.
 - `integrator::A`: integration algorithm (defaults to Lanczos exponentiation)
 - `tolgauge::Float64`: tolerance for gauging algorithm
 - `maxiter::Int`: maximum amount of gauging iterations
+- `finalize::F`: user-supplied function which is applied after each iteration, with
+    signature `finalize(t, Ψ, H, environments)`
 """
-@kwdef struct TDVP{A} <: Algorithm
+@kwdef struct TDVP{A, F} <: Algorithm
     integrator::A = Lanczos(; tol=Defaults.tol)
     tolgauge::Float64 = Defaults.tolgauge
     maxiter::Int = Defaults.maxiter
+    finalize::F = Defaults._finalize
 end
 
 function timestep(Ψ::InfiniteMPS, H, time::Number, timestep::Number, alg::TDVP, 
@@ -74,6 +77,9 @@ function timestep(Ψ::InfiniteMPS, H, time::Number, timestep::Number, alg::TDVP,
     end
     
     recalculate!(envs,newΨ)
+
+    alg.finalize(time, Ψ, H, envs)
+
     newΨ,envs
 end
 
@@ -113,6 +119,9 @@ function timestep!(Ψ::AbstractFiniteMPS, H, t::Number, dt::Number, alg::TDVP,
     Ψ.AC[1], converged, convhist = integrate(h_ac, Ψ.AC[1], t + dt / 2, -1im, dt / 2, alg.integrator)
     converged == 0 &&
         @info "time evolving ac(1) on the right->left sweep failed $(convhist.normres)"
+
+    alg.finalize(t, Ψ, H, envs)
+
     return Ψ, envs
 end
 

@@ -77,20 +77,20 @@ function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle
     U = Tensor(ones, S₁)
 
     @tensor Vₗ[-1 -2; -3] := state.AC[i][3 4; -3] * conj(U[1]) * O₁[1 2; 4 -2] * conj(state.AC[i][3 2; -1])
-    @tensor Vᵣ[-1 -2; -3] := state.AC[i][-1 2; 1] * O₂[-2 4; 2 3] * U[3] * conj(state.AC[1][-3 4; 1])
+    @tensor Vᵣ[-1 -2; -3] := state.AC[i][-1 2; 1] * O₂[-2 4; 2 3] * U[3] * conj(state.AC[i][-3 4; 1])
 
-    for j = i-1:-1:1
+    for j = i-1:-1:1 # j < i ==> factor -i
         if j < i-1
-            @tensor Vᵣ[-1 -2; -3] := Vᵣ[1 -2; 4] * (state.AL[j+1])[-1 2; 1] * middle[3; 2] * conj((state.AL[j-1])[-3 3; 4])
+            @tensor Vᵣ[-1 -2; -3] := (-2im) *Vᵣ[1 -2; 4] * (state.AL[j+1])[-1 2; 1] * middle[3; 2] * conj((state.AL[j+1])[-3 3; 4])
         end
-        G[j] = @tensor Vᵣ[4; 5 7] * state.AL[j][1 2; 4] * O₁[3 6; 2 5] * conj(U[3]) * conj(state.AL[j][1 6; 7])
+        G[j] = 1im*(@tensor Vᵣ[4; 5 7] * state.AL[j][1 2; 4] * O₁[3 6; 2 5] * conj(U[3]) * conj(state.AL[j][1 6; 7]))
     end
     G[i] = @tensor (state.AC[i])[1 2; 8] * O₂[5 4; 2 3] * U[3] * O₁[6 7; 4 5] * conj(U[6]) * conj((state.AC[i])[1 7; 8])
-    for j = i+1:N
+    for j = i+1:N # j > i ==> factor i and conjugate
         if j > i+1
-            @tensor Vₗ[-1 -2; -3] := Vₗ[1 -2; 4] * (state.AR[j-1])[4 5; -3] * middle[3; 5] * conj((state.AR[j-1])[1 3; -1])
+            @tensor Vₗ[-1 -2; -3] := (2im) * Vₗ[1 -2; 4] * (state.AR[j-1])[4 5; -3] * middle[3; 5] * conj((state.AR[j-1])[1 3; -1])
         end
-        G[j] = @tensor Vₗ[2; 3 5] * state.AR[j][5 6; 7] * O₂[3 4; 6 1] * U[1] * conj(state.AR[j][2 4; 7])
+        G[j] = -1im*(@tensor Vₗ[2; 3 5] * state.AR[j][5 6; 7] * O₂[3 4; 6 1] * U[1] * conj(state.AR[j][2 4; 7]))
     end
     return G
 end
