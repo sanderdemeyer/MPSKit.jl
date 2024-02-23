@@ -21,7 +21,7 @@ export leftorth,
 export r_LL, l_LL, r_RR, l_RR, r_RL, r_LR, l_RL, l_LR # should be properties
 
 # useful utility functions?
-export add_util_leg, max_Ds, recalculate!
+export add_util_leg, add_util_leg_front, add_util_leg_back, max_Ds, recalculate!
 export left_virtualspace, right_virtualspace, physicalspace
 export entanglementplot, transferplot
 

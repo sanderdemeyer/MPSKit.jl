@@ -59,6 +59,22 @@ function add_util_leg(tensor::AbstractTensorMap{S,N1,N2}) where {S,N1,N2}
     return util_front * tensor * util_back
 end
 
+function add_util_leg_front(tensor::AbstractTensorMap{S,N1,N2}) where {S,N1,N2}
+    ou = oneunit(_firstspace(tensor))
+
+    util_front = isomorphism(storagetype(tensor), ou * codomain(tensor), codomain(tensor))
+
+    return util_front * tensor
+end
+
+function add_util_leg_back(tensor::AbstractTensorMap{S,N1,N2}) where {S,N1,N2}
+    ou = oneunit(_firstspace(tensor))
+
+    util_back = isomorphism(storagetype(tensor), domain(tensor), domain(tensor) * ou)
+
+    return  tensor * util_back
+end
+
 function union_split(a::AbstractArray)
     T = reduce((a, b) -> Union{a,b}, typeof.(a))
     nA = similar(a, T)

@@ -95,6 +95,269 @@ function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle
     return G
 end
 
+function correlator_old(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle, left::MPOTensor, right::MPOTensor, i::Int, N::Int)
+    spin = 1//2
+    pspace = U1Space(i => 1 for i in (-spin):spin)
+    
+    U_space₁ = Tensor(ones, space(O₁)[1])
+    U_space₂ = Tensor(ones, space(O₂)[4])
+    
+    unit_left = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], space(left)[1] ⊗ pspace, pspace ⊗ space(left)[1])
+    unit_right = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], conj(space(right)[4]) ⊗ pspace, pspace ⊗ conj(space(right)[4]))
+    
+    G = similar(1:N, scalartype(state))
+    
+    for op_index = 1:N-1 # divide by N-1?
+    
+        println("op_index = $(op_index) of N = $(N)")
+        H_list = fill(unit_left, N)
+    
+        H_list[op_index] = left
+        H_list[op_index+1] = right
+    
+        U_H_left = Tensor(ones, space(H_list[i])[1])
+        U_H_right = Tensor(ones, space(H_list[i])[4])
+    
+        for i₂ = op_index+2:N
+            H_list[i₂] = unit_right
+        end
+    
+        @tensor Vₗ[-1 -2; -3 -4] := state.AC[i][1 2; -4] * conj(U_space₁[3]) * O₁[3 4; 2 -3] * H_list[i][5 6; 4 -2] * conj(U_H_left[5]) * conj(state.AC[i][1 6; -1])
+        @tensor Vᵣ[-1 -2; -3 -4] := state.AC[i][-1 2; 1] * H_list[i][-2 4; 2 3] * conj(U_H_right[3]) * O₂[-3 6; 4 5] * conj(U_space₂[5]) * conj(state.AC[i][-4 6; 1])
+    
+        for j = i-1:-1:1 # j < i ==> factor -i
+            # global Vᵣ
+            if j < i-1
+                @tensor Vᵣ[-1 -2; -3 -4] := (-2im) * Vᵣ[1 4; -3 6] * (state.AL[j+1])[-1 2; 1] * middle[3; 2] * H_list[j+1][-2 5; 3 4] * conj((state.AL[j+1])[-4 5; 6])
+            end
+            U_H_left = Tensor(ones, space(H_list[j])[1])
+            G[j] += 1im*(@tensor Vᵣ[4 8; 5 10] * state.AL[j][1 2; 4] * O₁[3 6; 2 5] * conj(U_space₁[3]) * H_list[j][7 9; 6 8] * conj(U_H_left[7]) * conj(state.AL[j][1 9; 10]))
+        end
+        U_H_left = Tensor(ones, space(H_list[i])[1])
+        U_H_right = U_H_right = Tensor(ones, space(H_list[i+1])[4])
+        G[i] += @tensor (state.AC[i])[1 2; 10] * O₂[5 4; 2 3] * conj(U_space₂[3]) * H_list[i][6 7; 4 12] * conj(U_H_left[6]) * O₁[8 9; 7 5] * conj(U_space₁[8]) * conj((state.AC[i])[1 9; 15]) * (state.AR[i+1])[10 11; 16] * H_list[i+1][12 14; 11 13] * conj(U_H_right[13]) * conj((state.AR[i+1])[15 14; 16])
+        for j = i+1:N # j > i ==> factor i and conjugate
+            # global Vₗ
+            # global U_H_right
+            if j > i+1
+                @tensor Vₗ[-1 -2; -3 -4] := (2im) * Vₗ[1 4; -3 1] * (state.AR[j-1])[1 2; -4] * middle[3; 2] * H_list[j-1][4 5; 3 -2] * conj((state.AR[j-1])[1 5; -1])
+            end
+            U_H_right = Tensor(ones, space(H_list[j])[4])
+            # @tensor G[-3 -4 -6 -8] := -1im*(Vₗ[9 -6; 7 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -8]
+            # @tensor G[-3 -4 -5 -6] := -1im*(Vₗ[9 -5; -6 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -7]
+            G[j] += -1im*(@tensor Vₗ[9 7; 4 1] * state.AR[j][1 2; 10] * H_list[j][7 5; 2 3] * conj(U_H_right[3]) * O₂[4 8; 5 6] * conj(U_space₂[6]) * conj(state.AR[j][9 8; 10]))
+        end
+    end
+    
+    return G
+end
+
+function correlator_wrong(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle_o, left::MPOTensor, right::MPOTensor, i::Int, N::Int)
+    spin = 1//2
+    pspace = U1Space(i => 1 for i in (-spin):spin)
+    
+    U_space₁ = Tensor(ones, space(O₁)[1])
+    U_space₂ = Tensor(ones, space(O₂)[4])
+    
+    unit_left = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], space(left)[1] ⊗ pspace, pspace ⊗ space(left)[1])
+    unit_right = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], conj(space(right)[4]) ⊗ pspace, pspace ⊗ conj(space(right)[4]))
+    
+    G = similar(1:N, scalartype(state))
+    
+    for op_index = 1:N-1 # divide by N-1?
+    
+        println("op_index = $(op_index) of N = $(N)")
+        H_list = fill(unit_left, N)
+    
+        H_list[op_index] = left
+        H_list[op_index+1] = right
+    
+        U_H_left = Tensor(ones, space(H_list[i])[1])
+        U_H_right = Tensor(ones, space(H_list[i])[4])
+    
+        for i₂ = op_index+2:N
+            H_list[i₂] = unit_right
+        end
+    
+        @tensor Vₗ[-1 -2; -3 -4] := state.AC[i][1 2; -4] * conj(U_space₁[3]) * O₁[3 4; 2 -3] * H_list[i][5 6; 4 -2] * conj(U_H_left[5]) * conj(state.AC[i][1 6; -1])
+        @tensor Vᵣ[-1 -2; -3 -4] := state.AC[i][-1 2; 1] * H_list[i][-2 4; 2 3] * conj(U_H_right[3]) * O₂[-3 6; 4 5] * conj(U_space₂[5]) * conj(state.AC[i][-4 6; 1])
+    
+        for j = i-1:-1:1 # j < i ==> factor -i
+            # global Vᵣ
+            if j < i-1
+                @tensor Vᵣ[-1 -2; -3 -4] := (-2im) * Vᵣ[1 4; -3 6] * (state.AL[j+1])[-1 2; 1] * middle[3; 2] * H_list[j+1][-2 5; 3 4] * conj((state.AL[j+1])[-4 5; 6])
+            end
+            if j <= op_index < i
+                U_H_left = Tensor(ones, space(H_list[j])[1])
+                final_value = 1im*(@tensor Vᵣ[4 8; 5 10] * state.AL[j][1 2; 4] * O₁[3 6; 2 5] * conj(U_space₁[3]) * H_list[j][7 9; 6 8] * conj(U_H_left[7]) * conj(state.AL[j][1 9; 10]))
+                G[j] += final_value/(i-j)
+            end
+        end
+        for j = i+1:N # j > i ==> factor i and conjugate
+            # global Vₗ
+            # global U_H_right
+            if j > i+1
+                @tensor Vₗ[-1 -2; -3 -4] := (2im) * Vₗ[1 4; -3 1] * (state.AR[j-1])[1 2; -4] * middle[3; 2] * H_list[j-1][4 5; 3 -2] * conj((state.AR[j-1])[1 5; -1])
+            end
+            if i <= op_index < j
+                U_H_right = Tensor(ones, space(H_list[j])[4])
+                # @tensor G[-3 -4 -6 -8] := -1im*(Vₗ[9 -6; 7 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -8]
+                # @tensor G[-3 -4 -5 -6] := -1im*(Vₗ[9 -5; -6 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -7]
+                final_value = -1im*(@tensor Vₗ[9 7; 4 1] * state.AR[j][1 2; 10] * H_list[j][7 5; 2 3] * conj(U_H_right[3]) * O₂[4 8; 5 6] * conj(U_space₂[6]) * conj(state.AR[j][9 8; 10]))
+                G[j] += final_value/(j-i)
+            end
+        end
+    end
+    U_H_left = Tensor(ones, space(left)[1])
+    U_H_right = Tensor(ones, space(right)[4])
+    G[i] += @tensor (state.AC[i])[1 2; 10] * O₂[5 4; 2 3] * conj(U_space₂[3]) * left[6 7; 4 12] * conj(U_H_left[6]) * O₁[8 9; 7 5] * conj(U_space₁[8]) * conj((state.AC[i])[1 9; 15]) * (state.AR[i+1])[10 11; 16] * right[12 14; 11 13] * conj(U_H_right[13]) * conj((state.AR[i+1])[15 14; 16])
+    return G
+end
+
+function transfer_matrix_loop(right_env, O₂, state, H, middle_o, i, sites, j, k)
+    if sites == 0
+        U_space₂ = Tensor(ones, space(O₂)[4])
+        @tensor return_value[-1 -2; -3 -4] := state.AC[i][-1 1; 7] * H[i][j,k][-2 3; 1 2] * O₂[-3 5; 3 4] * conj(U_space₂[4]) * conj(state.AC[i][-4 5; 6]) * right_env[k][7 2; 6]
+        return return_value
+        # return transfer_right(right_env[k], H[i][j,k], state.AC[i], state.AC[i])
+    else 
+        elements = []
+        for (a,b) in keys(H[i])
+            if a == j
+                @tensor above[-1 -2; -3] := (2im) * state.AL[i][-1 1; -3] * middle_o[-2; 1]
+                new_element = transfer_right(transfer_matrix_loop(right_env, O₂, state, H, middle_o, i+1, sites-1, b, k), H[i][a,b], above, state.AL[i])
+                push!(elements, new_element)
+            end
+        end
+        total = elements[1]
+        for i = 2:length(elements)
+            total += elements[i]
+        end
+        return total
+    end
+end
+
+function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle_o, H::MPOHamiltonian, i::Int, N::Int)
+    # spin = 1//2
+    # pspace = U1Space(i => 1 for i in (-spin):spin)
+    
+    U_space₁ = Tensor(ones, space(O₁)[1])
+    U_space₂ = Tensor(ones, space(O₂)[4])
+    
+    # unit_left = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], space(left)[1] ⊗ pspace, pspace ⊗ space(left)[1])
+    # unit_right = TensorMap([1.0+0.0im 0.0+0.0im; 0.0+0.0im 1.0+0.0im], conj(space(right)[4]) ⊗ pspace, pspace ⊗ conj(space(right)[4]))
+    
+    G = similar(1:N, scalartype(state))
+    
+    # for (j,k) in keys(H) # divide by N-1?
+    
+    #     println("op_index = $(op_index) of N = $(N)")
+    #     H_list = fill(unit_left, N)
+    
+    #     H_list[op_index] = left
+    #     H_list[op_index+1] = right
+    
+    #     U_H_left = Tensor(ones, space(H_list[i])[1])
+    #     U_H_right = Tensor(ones, space(H_list[i])[4])
+    
+    #     for i₂ = op_index+2:N
+    #         H_list[i₂] = unit_right
+    #     end
+    
+    #     @tensor Vₗ[-1 -2; -3 -4] := state.AC[i][1 2; -4] * conj(U_space₁[3]) * O₁[3 4; 2 -3] * H_list[i][5 6; 4 -2] * conj(U_H_left[5]) * conj(state.AC[i][1 6; -1])
+    #     @tensor Vᵣ[-1 -2; -3 -4] := state.AC[i][-1 2; 1] * H_list[i][-2 4; 2 3] * conj(U_H_right[3]) * O₂[-3 6; 4 5] * conj(U_space₂[5]) * conj(state.AC[i][-4 6; 1])
+    
+    #     for j = i-1:-1:1 # j < i ==> factor -i
+    #         # global Vᵣ
+    #         if j < i-1
+    #             @tensor Vᵣ[-1 -2; -3 -4] := (-2im) * Vᵣ[1 4; -3 6] * (state.AL[j+1])[-1 2; 1] * middle_o[3; 2] * H_list[j+1][-2 5; 3 4] * conj((state.AL[j+1])[-4 5; 6])
+    #         end
+    #         if j <= op_index < i
+    #             U_H_left = Tensor(ones, space(H_list[j])[1])
+    #             final_value = 1im*(@tensor Vᵣ[4 8; 5 10] * state.AL[j][1 2; 4] * O₁[3 6; 2 5] * conj(U_space₁[3]) * H_list[j][7 9; 6 8] * conj(U_H_left[7]) * conj(state.AL[j][1 9; 10]))
+    #             G[j] += final_value/(i-j)
+    #         end
+    #     end
+    #     for j = i+1:N # j > i ==> factor i and conjugate
+    #         # global Vₗ
+    #         # global U_H_right
+    #         if j > i+1
+    #             @tensor Vₗ[-1 -2; -3 -4] := (2im) * Vₗ[1 4; -3 1] * (state.AR[j-1])[1 2; -4] * middle_o[3; 2] * H_list[j-1][4 5; 3 -2] * conj((state.AR[j-1])[1 5; -1])
+    #         end
+    #         if i <= op_index < j
+    #             U_H_right = Tensor(ones, space(H_list[j])[4])
+    #             # @tensor G[-3 -4 -6 -8] := -1im*(Vₗ[9 -6; 7 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -8]
+    #             # @tensor G[-3 -4 -5 -6] := -1im*(Vₗ[9 -5; -6 1] * state.AR[j][1 2; 10] * conj(state.AR[j][9 -4; 10])) * H_list[j][7 -3; 2 -7]
+    #             final_value = -1im*(@tensor Vₗ[9 7; 4 1] * state.AR[j][1 2; 10] * H_list[j][7 5; 2 3] * conj(U_H_right[3]) * O₂[4 8; 5 6] * conj(U_space₂[6]) * conj(state.AR[j][9 8; 10]))
+    #             G[j] += final_value/(j-i)
+    #         end
+    #     end
+    # end
+    # U_H_left = Tensor(ones, space(left)[1])
+    # U_H_right = Tensor(ones, space(right)[4])
+
+    U_space₁ = Tensor(ones, space(O₁)[1])
+    U_space₂ = Tensor(ones, space(O₂)[4])
+
+    envs = environments(state, H)
+    for i₂ = i+1:N # j > i ==> factor i and conjugate
+        sites = i₂-i-1
+        for (j₁,k₁) in keys(H[i])
+            for (j₂,k₂) in keys(H[i₂])
+                elem = transfer_matrix_loop(rightenv(envs, i₂, state), O₂, state, H, middle_o, i+1, sites, k₁, k₂)
+                element_final = @tensor leftenv(envs, i, state)[j₁][9 10; 11] * state.AL[i][11 1; 2] * O₁[3 5; 1 4] * conj(U_space₁[3]) * H[i][j₁,k₁][10 7; 5 6] * conj(state.AL[i][9 7; 8]) * elem[2 6; 4 8]
+                G[i₂] += (-1im) * element_final / (2*(i₂ - i + 1))
+            end
+        end
+    end
+    # envs = environments(state, H)
+    left_env = leftenv(envs, i, state)
+    right_env = rightenv(envs, i, state)
+
+    for (j,k) in keys(H[i])
+        @tensor element_final = left_env[j][10 6; 1] * state.AC[i][1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[i][j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj(state.AC[i][10 9; 13]) * right_env[k][11 12; 13]
+        G[i] += element_final
+    end
+
+    for i₂ = i-1:-1:1 # j < i ==> factor -i
+        sites = i-i₂-1
+        for (j₁,k₁) in keys(H[i₂])
+            for (j₂,k₂) in keys(H[i])
+                elem = transfer_matrix_loop(rightenv(envs, i, state), O₂, state, H, middle_o, i₂+1, sites, k₁, k₂)
+                element_final = @tensor leftenv(envs, i₂, state)[j₁][9 10; 11] * state.AL[i₂][11 1; 2] * O₁[3 5; 1 4] * conj(U_space₁[3]) * H[i₂][j₁,k₁][10 7; 5 6] * conj(state.AL[i₂][9 7; 8]) * elem[2 6; 4 8]
+                G[i₂] += (1im) * element_final / (2*(i - i₂ + 1))
+            end
+        end
+    end
+    # # println(isa(rightenv(envs,i,state)[k], MPSTensor))
+            # elem = transfer_matrix_loop(rightenv(envs, i+sites, state), O₂, state, H, middle_o, i, i₂-i, j, k)
+            # element_final = @tensor leftenv(envs, i, state)[j][9 10; 11] * state.AC[i][11 1; 2] * O₁[3 5; 1 4] * conj(U_space₁[3]) * H[j,k]     elem[3 2; 1]
+            # G[i₂] += element_final
+            # # # G_new = @tensor leftenv(envs, i, state)[j][1 2; 3] * transfer_matrix_loop(rightenv(envs, i, state), state, H, i, j, k) [3 2; 1]
+            # # transfer_right(rightenv(envs, i, state)[k], H[i][j,k], state.AC[i], state.AC[i])
+            # # G[i] = @tensor (state.AC[i])[1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj((state.AC[i])[10 9; 13]) * leftenv(envs, length(state), state)[10 6; 1] * rightenv(envs, length(state), state)[11 12; 13]
+
+            # value = @tensor (state.AC[i])[1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[i][j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj((state.AC[i])[10 9; 13]) * leftenv(envs, i, state)[j][10 6; 1] * rightenv(envs, i, state)[k][11 12; 13]
+        # for i₂ = i+1:N # j > i ==> factor i and conjugate
+        #     for (j,k) in keys(H[i])
+        #         # println(isa(rightenv(envs,i,state)[k], MPSTensor))
+        #         elem = transfer_matrix_loop(rightenv(envs, i+sites, state), state, H, middle_o, i, i₂-i, j, k)
+        #         element_final = @tensor leftenv(envs, i, state)[j][1 2; 3] * elem[3 2; 1]
+        #         G[i₂] += element_final
+        #         # # G_new = @tensor leftenv(envs, i, state)[j][1 2; 3] * transfer_matrix_loop(rightenv(envs, i, state), state, H, i, j, k) [3 2; 1]
+        #         # transfer_right(rightenv(envs, i, state)[k], H[i][j,k], state.AC[i], state.AC[i])
+        #         # G[i] = @tensor (state.AC[i])[1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj((state.AC[i])[10 9; 13]) * leftenv(envs, length(state), state)[10 6; 1] * rightenv(envs, length(state), state)[11 12; 13]
+    
+        #         value = @tensor (state.AC[i])[1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[i][j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj((state.AC[i])[10 9; 13]) * leftenv(envs, i, state)[j][10 6; 1] * rightenv(envs, i, state)[k][11 12; 13]
+        #     end
+        # # value = @plansor (state.AC[i])[1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[i][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj((state.AC[i])[10 9; 13]) * leftenv(envs, i, state)[10 6; 1] * rightenv(envs, i, state)[11 12; 13]
+        # end
+    # G[i] += @tensor (state.AC[i])[1 2; 10] * O₂[5 4; 2 3] * conj(U_space₂[3]) * left[6 7; 4 12] * conj(U_H_left[6]) * O₁[8 9; 7 5] * conj(U_space₁[8]) * conj((state.AC[i])[1 9; 15]) * (state.AR[i+1])[10 11; 16] * right[12 14; 11 13] * conj(U_H_right[13]) * conj((state.AR[i+1])[15 14; 16])
+    return G
+end
+
+
+
 function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle, N::Int)
     # TO DO: implement function above for a range of i-values more efficiently
 end

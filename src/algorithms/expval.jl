@@ -108,6 +108,33 @@ function expectation_value_fimpl(ψ::AbstractFiniteMPS, H::MPOHamiltonian, envs:
     return ens ./ n
 end
 
+# function expectation_value_correlator(ψ::AbstractFiniteMPS, H::MPOHamiltonian, O₁::MPOTensor, O₂::MPOTensor, middle, envs::FinEnv)
+#     ens = zeros(scalartype(ψ), length(ψ))
+
+#     @tensor cur[-1 -2; -3] := leftenv(envs, i, ψ)[j][1 2; 3]
+
+#     @tensor cur[-1 -2; -3] = cur[1 2; 3]
+
+
+
+#     for i in 1:length(ψ), (j, k) in keys(H[i])
+#         !((j == 1 && k != 1) || (k == H.odim && j != H.odim)) && continue
+
+#         cur = @plansor leftenv(envs, i, ψ)[j][1 2; 3] * ψ.AC[i][3 7; 5] *
+#                        rightenv(envs, i, ψ)[k][5 8; 6] * conj(ψ.AC[i][1 4; 6]) *
+#                        H[i][j, k][2 4; 7 8]
+#         if !(j == 1 && k == H.odim)
+#             cur /= 2
+#         end
+
+#         ens[i] += cur
+#     end
+
+#     n = norm(ψ.AC[end])^2
+#     return ens ./ n
+# end
+
+
 function expectation_value(st::InfiniteMPS, H::MPOHamiltonian, prevca::MPOHamInfEnv)
     #calculate energy density
     len = length(st)
