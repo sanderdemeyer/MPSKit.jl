@@ -237,7 +237,7 @@ function transfer_matrix_loop(right_env, O₂, state, H, middle_o, i, sites, j, 
     end
 end
 
-function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle_o, H::MPOHamiltonian, i::Int, N::Int)
+function correlator_OLD2(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle_o, H::MPOHamiltonian, i::Int, N::Int)
     # spin = 1//2
     # pspace = U1Space(i => 1 for i in (-spin):spin)
     
@@ -357,6 +357,60 @@ function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle
 end
 
 
+function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle_o, H::MPOHamiltonian, N::Int)
+    corr = zeros(ComplexF64, N, N)
+    envs = environments(state, H)
+
+    U_space₁ = Tensor(ones, space(O₁)[1])
+    U_space₂ = Tensor(ones, space(O₂)[4])
+    
+    for i = 1:N
+        println("i = $(i)")
+        left_env = leftenv(envs, i, state)
+        right_env = rightenv(envs, i, state)
+    
+        for (j,k) in keys(H[i])
+            element_final = @tensor left_env[j][10 6; 1] * state.AC[i][1 2; 11] * O₂[4 5; 2 3] * conj(U_space₂[3]) * H[i][j,k][6 7; 5 12] * O₁[8 9; 7 4] * conj(U_space₁[8]) * conj(state.AC[i][10 9; 13]) * right_env[k][11 12; 13]
+            corr[i,i] += element_final
+        end
+
+        @tensor above[-1 -2; -3] := (2im) * state.AR[i+1][-1 1; -3] * middle_o[-2; 1]
+        transfer = TransferMatrix(above, H[i+1], state.AR[i+1])
+        for sites = 2:N-i
+            new_value = 0.0 
+            for (j₁, k₁) in keys(H[i])
+                for (j₂, k₂) in keys(transfer.middle)
+                    if (k₁ == j₂)
+                        for (j₃, k₃) in keys(H[i+sites])
+                            if (k₂ == j₃)
+                                new_value += @tensor left_env[j₁][6 5; 1] * state.AC[i][1 2; 8] * O₁[3 4; 2 18] * conj(U_space₁[3]) * H[i][j₁,k₁][5 7; 4 10] * conj(state.AC[i][6 7; 11]) * transfer.above[8 9; 13] * transfer.middle[j₂,k₂][10 12; 9 15] * conj(transfer.below[11 12; 19]) * state.AR[i+sites][13 14; 23] * H[i+sites][j₃,k₃][15 16; 14 22] * O₂[18 20; 16 17] * conj(U_space₂[17]) * conj(state.AR[i+sites][19 20; 21]) * right_env[k₃][23 22; 21]
+                            end
+                        end
+                    end
+                end
+            end
+            corr[i,i+sites] = (-1im) * new_value
+            corr[i+sites,i] = (1im) * conj(new_value)
+
+            @tensor above[-1 -2; -3] := (2im) * state.AR[i+sites][-1 1; -3] * middle_o[-2; 1]
+            tra_new = TransferMatrix(above, H[i+sites], state.AR[i+sites])
+            transfer = transfer * tra_new
+        end
+
+        if i != N
+            new_value = 0.0
+            for (j₁, k₁) in keys(H[i])
+                for (j₂, k₂) in keys(H[i+1])
+                    if (k₁ == j₂)
+                        new_value += @tensor left_env[j₁][6 5; 1] * state.AC[i][1 2; 8] * O₁[3 4; 2 13] * conj(U_space₁[3]) * H[i][j₁,k₁][5 7; 4 10] * conj(state.AC[i][6 7; 14]) * state.AR[i+1][8 9; 18] * H[i+1][j₂,k₂][10 11; 9 17] * O₂[13 15; 11 12] * conj(U_space₂[12]) * conj(state.AR[i+1][14 15; 16]) * right_env[k₂][18 17; 16]
+                    end
+                end
+            end
+            corr[i,i+1] = new_value
+            corr[i+1,i] = conj(new_value)
+        end
+    end
+end
 
 function correlator(state::AbstractMPS, O₁::MPOTensor, O₂::MPOTensor, middle, N::Int)
     # TO DO: implement function above for a range of i-values more efficiently
