@@ -69,7 +69,7 @@ function find_groundstate(ψ::InfiniteMPS, H, alg::VUMPS, envs=environments(ψ, 
     end
 
     Δt = (Base.time_ns() - t₀) / 1.0e9
-    alg.verbose && @info "VUMPS summary:" ϵ λ = sum(expectation_value(ψ, H, envs)) Δt
+    alg.verbose && @info "VUMPS#Windows summary:" ϵ λ = sum(expectation_value(ψ, H, envs)) Δt
     return ψ, envs, ϵ
 end
 
