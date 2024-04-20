@@ -61,6 +61,15 @@ function transfer_right(v::MPSTensor, A::MPOTensor, Ab::MPSTensor)
     @plansor t[-1 -2; -3 -4] := A[-1 4; -3 5] * τ[-2 3; 4 2] * conj(Ab[-4 3; 1]) * v[5 2; 1]
 end
 
+# transfer, but the lower A is an excited tensor and there is an mpo leg being passed through
+function transfer_left(v::MPSTensor, A::MPSTensor, Ab::MPOTensor)
+    @plansor t[-1 -2; -3 -4] := v[1 3; 4] * A[4 5; -4] * τ[3 2; 5 -2] * conj(Ab[1 2; -3 -1])
+end
+
+function transfer_right(v::MPSTensor, A::MPSTensor, Ab::MPOTensor)
+    @plansor t[-1 -2; -3 -4] := A[-1 4; 5] * τ[-2 3; 4 2] * conj(Ab[-4 3; -3 1]) * v[5 2; 1]
+end
+
 # the transfer operation of a density matrix with a utility leg in its codomain is ill defined - how should one braid the utility leg?
 # hence the checks - to make sure that this operation is uniquely defined
 function transfer_left(v::MPSTensor{S}, A::MPSTensor{S}, Ab::MPSTensor{S}) where {S}
@@ -117,6 +126,15 @@ function transfer_right(v::MPSTensor, O::MPOTensor, A::MPOTensor, Ab::MPSTensor)
     @plansor t[-1 -2; -3 -4] := A[-1 4; -3 5] * O[-2 2; 4 3] * conj(Ab[-4 2; 1]) * v[5 3; 1]
 end
 
+#mpo transfer, but with Ab an excitation-tensor
+function transfer_left(v::MPSTensor, O::MPOTensor, A::MPSTensor, Ab::MPOTensor)
+    @plansor t[-1 -2; -3 -4] := v[4 2; 1] * A[1 3; -4] * O[2 5; 3 -2] * conj(Ab[4 5; -3 -1])
+end
+function transfer_right(v::MPSTensor, O::MPOTensor, A::MPSTensor, Ab::MPOTensor)
+    @plansor t[-1 -2; -3 -4] := A[-1 4; 5] * O[-2 2; 4 3] * conj(Ab[-4 2; -3 1]) * v[5 3; 1]
+end
+
+
 #mpo transfer, with an excitation leg
 function transfer_left(v::MPOTensor, O::MPOTensor, A::MPSTensor, Ab::MPSTensor)
     @plansor v[-1 -2; -3 -4] := v[4 2; -3 1] * A[1 3; -4] * O[2 5; 3 -2] * conj(Ab[4 5; -1])
@@ -145,12 +163,22 @@ end
 
 # A excited
 function transfer_left(vec::AbstractVector{V}, ham::SparseMPOSlice, A::M,
-                       Ab::V) where {V<:MPSTensor} where {M<:MPOTensor}
-    return transfer_left(M, vec, ham, A, Ab)
+    Ab::V) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_left(M, vec, ham, A, Ab)
 end
 function transfer_right(vec::AbstractVector{V}, ham::SparseMPOSlice, A::M,
-                        Ab::V) where {V<:MPSTensor} where {M<:MPOTensor}
-    return transfer_right(M, vec, ham, A, Ab)
+     Ab::V) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_right(M, vec, ham, A, Ab)
+end
+
+# Ab excited
+function transfer_left(vec::AbstractVector{V}, ham::SparseMPOSlice, A::V,
+    Ab::M) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_left(M, vec, ham, A, Ab)
+end
+function transfer_right(vec::AbstractVector{V}, ham::SparseMPOSlice, A::V,
+     Ab::M) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_right(M, vec, ham, A, Ab)
 end
 
 # vec excited
