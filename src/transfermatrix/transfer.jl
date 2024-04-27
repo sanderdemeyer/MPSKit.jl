@@ -103,6 +103,14 @@ function transfer_right(v::MPSBondTensor, A::MPOTensor, B::MPOTensor)
     @plansor t[-1; -2] := A[-1 3; 4 1] * conj(B[-2 3; 4 2]) * v[1; 2]
 end
 
+#transfer for 2 mpo tensors
+function transfer_left(v::MPSTensor, A::MPOTensor, B::MPOTensor)
+    @tensor t[-1 -2; -3] := v[1 -2; 2] * A[2 3; 4 -3] * conj(B[1 3; 4 -1])
+end
+function transfer_right(v::MPSTensor, A::MPOTensor, B::MPOTensor)
+    @tensor t[-1 -2; -3] := A[-1 3; 4 1] * conj(B[-3 3; 4 2]) * v[1 -2; 2]
+end
+
 # ----------------------------------------------------
 # | transfers for (vector, operator, tensor, tensor) |
 # ----------------------------------------------------
@@ -134,6 +142,13 @@ function transfer_right(v::MPSTensor, O::MPOTensor, A::MPSTensor, Ab::MPOTensor)
     @plansor t[-1 -2; -3 -4] := A[-1 4; 5] * O[-2 2; 4 3] * conj(Ab[-4 2; -3 1]) * v[5 3; 1]
 end
 
+#mpo transfer, but with A and Ab an excitation-tensor
+function transfer_left(v::MPSTensor, O::MPOTensor, A::MPOTensor, Ab::MPOTensor)
+    @tensor t[-1 -2; -3] := v[4 2; 1] * A[1 3; 6 -3] * O[2 5; 3 -2] * conj(Ab[4 5; 6 -1])
+end
+function transfer_right(v::MPSTensor, O::MPOTensor, A::MPOTensor, Ab::MPOTensor)
+    @tensor t[-1 -2; -3] := A[-1 4; 6 5] * O[-2 2; 4 3] * conj(Ab[-3 2; 6 1]) * v[5 3; 1]
+end
 
 #mpo transfer, with an excitation leg
 function transfer_left(v::MPOTensor, O::MPOTensor, A::MPSTensor, Ab::MPSTensor)
@@ -177,6 +192,16 @@ function transfer_left(vec::AbstractVector{V}, ham::SparseMPOSlice, A::V,
 return transfer_left(M, vec, ham, A, Ab)
 end
 function transfer_right(vec::AbstractVector{V}, ham::SparseMPOSlice, A::V,
+     Ab::M) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_right(M, vec, ham, A, Ab)
+end
+
+# A and Ab excited
+function transfer_left(vec::AbstractVector{V}, ham::SparseMPOSlice, A::M,
+    Ab::M) where {V<:MPSTensor} where {M<:MPOTensor}
+return transfer_left(M, vec, ham, A, Ab)
+end
+function transfer_right(vec::AbstractVector{V}, ham::SparseMPOSlice, A::M,
      Ab::M) where {V<:MPSTensor} where {M<:MPOTensor}
 return transfer_right(M, vec, ham, A, Ab)
 end
